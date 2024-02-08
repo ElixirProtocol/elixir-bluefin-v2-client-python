@@ -8,7 +8,7 @@ class OnboardingSigner(Signer):
     def __init__(self):
         super().__init__()
 
-    def create_signature(self, msg, private_key, encoding="utf-8"):
+    async def create_signature(self, msg, private_key, encoding="utf-8"):
         """
         Signs the message.
         Inputs:
@@ -26,4 +26,4 @@ class OnboardingSigner(Signer):
         intent = intent + msg_bytearray
 
         hash = hashlib.blake2b(intent, digest_size=32)
-        return self.sign_hash(hash.digest(), private_key)
+        return await self.sign_hash(hash.digest(), private_key)

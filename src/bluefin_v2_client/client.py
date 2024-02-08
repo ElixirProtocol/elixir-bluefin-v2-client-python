@@ -80,7 +80,7 @@ class BluefinClient:
 
         # if no auth token provided create on
         if not user_auth_token:
-            onboarding_signature = self.onboarding_signer.create_signature(
+            onboarding_signature = await self.onboarding_signer.create_signature(
                 self.network["onboardingUrl"], self.account.privateKeyBytes
             )
             onboarding_signature = (
@@ -139,16 +139,17 @@ class BluefinClient:
 
         return Order(
             market=default_value(
-                params, "market", self.contracts.get_perpetual_id(
-                    params["symbol"])
+                params, "market", self.contracts.get_perpetual_id(params["symbol"])
             ),
             isBuy=params["side"] == ORDER_SIDE.BUY,
             price=params["price"],
             quantity=params["quantity"],
             leverage=default_value(params, "leverage", 1),
-            maker=params["maker"].lower()
-            if "maker" in params
-            else self.account.address.lower(),
+            maker=(
+                params["maker"].lower()
+                if "maker" in params
+                else self.account.address.lower()
+            ),
             reduceOnly=default_value(params, "reduceOnly", False),
             postOnly=default_value(params, "postOnly", False),
             cancelOnRevert=default_value(params, "cancelOnRevert", False),
@@ -158,7 +159,9 @@ class BluefinClient:
             ioc=default_value(params, "ioc", False),
         )
 
-    def create_signed_order(self, req: OrderSignatureRequest) -> OrderSignatureResponse:
+    async def create_signed_order(
+        self, req: OrderSignatureRequest
+    ) -> OrderSignatureResponse:
         """
         Create an order from provided params and signs it using the private key of the account
         Inputs:
@@ -183,7 +186,7 @@ class BluefinClient:
 
         order = self.create_order_to_sign(sui_params)
         symbol = sui_params["symbol"].value
-        order_signature = self.order_signer.sign_order(
+        order_signature = await self.order_signer.sign_order(
             order, self.account.privateKeyBytes
         )
         order_signature = order_signature + self.account.publicKeyBase64.decode()
@@ -208,7 +211,7 @@ class BluefinClient:
             triggerPrice=default_value(sui_params, "triggerPrice", None),
         )
 
-    def create_signed_cancel_order(
+    async def create_signed_cancel_order(
         self, params: OrderSignatureRequest, parentAddress: str = ""
     ):
         """
@@ -239,11 +242,11 @@ class BluefinClient:
 
         order_to_sign = self.create_order_to_sign(sui_params)
         hash_val = self.order_signer.get_order_hash(order_to_sign)
-        return self.create_signed_cancel_orders(
+        return await self.create_signed_cancel_orders(
             params["symbol"], hash_val.hex(), parentAddress
         )
 
-    def create_signed_cancel_orders(
+    async def create_signed_cancel_orders(
         self, symbol: MARKET_SYMBOLS, order_hash: list, parentAddress: str = ""
     ):
         """
@@ -258,11 +261,11 @@ class BluefinClient:
         """
         if isinstance(order_hash, list) is False:
             order_hash = [order_hash]
-        cancel_hash = self.order_signer.encode_message(
-            {"orderHashes": order_hash})
+        cancel_hash = self.order_signer.encode_message({"orderHashes": order_hash})
         hash_sig = (
-            self.order_signer.sign_hash(
-                cancel_hash, self.account.privateKeyBytes, "")
+            await self.order_signer.sign_hash(
+                cancel_hash, self.account.privateKeyBytes, ""
+            )
             + self.account.publicKeyBase64.decode()
         )
         return OrderCancellationRequest(
@@ -318,8 +321,7 @@ class BluefinClient:
             hashes.append(i["hash"])
 
         if len(hashes) > 0:
-            req = self.create_signed_cancel_orders(
-                symbol, hashes, parentAddress)
+            req = await self.create_signed_cancel_orders(symbol, hashes, parentAddress)
             return await self.post_cancel_order(req)
 
         return False
@@ -403,7 +405,7 @@ class BluefinClient:
             package_id,
             typeArguments=[self.contracts.get_currency_type()],
         )
-        signature = self.contract_signer.sign_tx(txBytes, self.account)
+        signature = await self.contract_signer.sign_tx(txBytes, self.account)
         res = rpc_sui_executeTransactionBlock(self.url, txBytes, signature)
         try:
             if res["result"]["effects"]["status"]["status"] == "success":
@@ -445,7 +447,7 @@ class BluefinClient:
             self.contracts.get_package_id(),
             typeArguments=[self.contracts.get_currency_type()],
         )
-        signature = self.contract_signer.sign_tx(txBytes, self.account)
+        signature = await self.contract_signer.sign_tx(txBytes, self.account)
         res = rpc_sui_executeTransactionBlock(self.url, txBytes, signature)
         try:
             if res["result"]["effects"]["status"]["status"] == "success":
@@ -484,7 +486,7 @@ class BluefinClient:
             self.contracts.get_package_id(),
             typeArguments=[self.contracts.get_currency_type()],
         )
-        signature = self.contract_signer.sign_tx(txBytes, self.account)
+        signature = await self.contract_signer.sign_tx(txBytes, self.account)
         res = rpc_sui_executeTransactionBlock(self.url, txBytes, signature)
 
         if res["result"]["effects"]["status"]["status"] == "success":
@@ -533,8 +535,10 @@ class BluefinClient:
                 self.contracts.get_package_id(),
                 typeArguments=[self.contracts.get_currency_type()],
             )
-            signature = self.contract_signer.sign_tx(txBytes, self.account)
-            separator = "||||"  # Choose a separator that won't appear in txBytes or signature
+            signature = await self.contract_signer.sign_tx(txBytes, self.account)
+            separator = (
+                "||||"  # Choose a separator that won't appear in txBytes or signature
+            )
             combined_data = f"{txBytes}{separator}{signature}"
             encoded_data = combined_data.encode().hex()
             res = await self.apis.post(
@@ -544,14 +548,13 @@ class BluefinClient:
                     "address": account_address,
                     "leverage": to_base18(leverage),
                     "marginType": MARGIN_TYPE.ISOLATED.value,
-                    "signedTransaction": encoded_data
+                    "signedTransaction": encoded_data,
                 },
                 auth_required=True,
             )
             # If API is unsuccessful make direct contract call to update the leverage
-            if 'error' in res:
-                result = rpc_sui_executeTransactionBlock(
-                    self.url, txBytes, signature)
+            if "error" in res:
+                result = rpc_sui_executeTransactionBlock(self.url, txBytes, signature)
                 if result["result"]["effects"]["status"]["status"] == "success":
                     return True
                 else:
@@ -634,7 +637,7 @@ class BluefinClient:
                 typeArguments=[self.contracts.get_currency_type()],
             )
 
-        signature = self.contract_signer.sign_tx(txBytes, self.account)
+        signature = await self.contract_signer.sign_tx(txBytes, self.account)
         result = rpc_sui_executeTransactionBlock(self.url, txBytes, signature)
         if result["result"]["effects"]["status"]["status"] == "success":
             return True
@@ -664,7 +667,7 @@ class BluefinClient:
             self.contracts.get_package_id(),
         )
 
-        signature = self.contract_signer.sign_tx(txBytes, self.account)
+        signature = await self.contract_signer.sign_tx(txBytes, self.account)
         result = rpc_sui_executeTransactionBlock(self.url, txBytes, signature)
         if result["result"]["effects"]["status"]["status"] == "success":
             return True
@@ -695,8 +698,7 @@ class BluefinClient:
             callArgs = []
             callArgs.append(userAddress or self.account.getUserAddress())
             callArgs.append(self.contracts.get_currency_type())
-            result = rpc_call_sui_function(
-                self.url, callArgs, method="suix_getCoins")
+            result = rpc_call_sui_function(self.url, callArgs, method="suix_getCoins")
             return result
         except Exception as e:
             raise (Exception("Failed to get USDC coins, Exception: {}".format(e)))
@@ -717,7 +719,9 @@ class BluefinClient:
         except Exception as e:
             raise (Exception("Failed to get balance, Exception: {}".format(e)))
 
-    async def get_user_position_from_chain(self, market: MARKET_SYMBOLS, userAddress: str = None):
+    async def get_user_position_from_chain(
+        self, market: MARKET_SYMBOLS, userAddress: str = None
+    ):
         """
         Returns the user positions from chain
         """
@@ -725,7 +729,10 @@ class BluefinClient:
             call_args = []
             call_args.append(self.contracts.get_position_table_id(market))
             call_args.append(
-                {"type": "address", "value": userAddress or self.account.getUserAddress()}
+                {
+                    "type": "address",
+                    "value": userAddress or self.account.getUserAddress(),
+                }
             )
             result = rpc_call_sui_function(
                 self.url, call_args, method="suix_getDynamicFieldObject"
@@ -746,7 +753,10 @@ class BluefinClient:
             call_args = []
             call_args.append(self.contracts.get_bank_table_id())
             call_args.append(
-                {"type": "address", "value": userAddress or self.account.getUserAddress()}
+                {
+                    "type": "address",
+                    "value": userAddress or self.account.getUserAddress(),
+                }
             )
             result = rpc_call_sui_function(
                 self.url, call_args, method="suix_getDynamicFieldObject"
@@ -924,10 +934,8 @@ class BluefinClient:
             dict: all contract addresses for the all markets.
         """
         return await self.apis.get(SERVICE_URLS["MARKET"]["CONTRACT_ADDRESSES"])
-    
 
-
-    #open referral program
+    # open referral program
 
     async def get_open_referral_referee_details(self, params: CursorPaginationPayload):
         """
@@ -973,9 +981,7 @@ class BluefinClient:
         response = self.apis.post(url, data, True)
         return response  # Returns a boolean indicating success or failure.
 
-
-
-    #open referral program
+    # open referral program
 
     # User endpoints
 
@@ -1153,217 +1159,209 @@ class BluefinClient:
             "Not enough balance available, please merge your coins for get usdc"
         )
 
-  # Growth endpoints
-    async def generate_referral_code(self,params:GenerateReferralCodeRequest):
+    # Growth endpoints
+    async def generate_referral_code(self, params: GenerateReferralCodeRequest):
         """
-            Inputs:
-                params(GenerateReferralCodeRequest): params required to generate referral code
-            Returns:
-                - GenerateReferralCodeResponse
-                    - referralAddress
-                    - referralCode
-                    - message?
-        """
-        return await self.apis.post(
-            SERVICE_URLS["GROWTH"]["GENERATE_CODE"],
-            params,
-            True
-        )
-    
-    async def affiliate_link_referred_user(self,params:LinkReferredUserRequest):
-        """
-            Inputs:
-                params(LinkReferredUserRequest): params required to link referred user
-            Returns:
-                - LinkReferredUserResponse
-                    - referralCode
-                    - refereeAddress
-                    - campaignId
-                    - message
+        Inputs:
+            params(GenerateReferralCodeRequest): params required to generate referral code
+        Returns:
+            - GenerateReferralCodeResponse
+                - referralAddress
+                - referralCode
+                - message?
         """
         return await self.apis.post(
-            SERVICE_URLS["GROWTH"]["AFFILIATE_LINK_REFERRED_USER"],
-            params,
-            True
+            SERVICE_URLS["GROWTH"]["GENERATE_CODE"], params, True
         )
-    
-    async def get_referrer_info(self, parentAddress:str=""):
+
+    async def affiliate_link_referred_user(self, params: LinkReferredUserRequest):
         """
-            Inputs:
-                parentAddress (Optional)
-            Returns:
-                - GetReferrerInfoResponse
-                    - isReferee
+        Inputs:
+            params(LinkReferredUserRequest): params required to link referred user
+        Returns:
+            - LinkReferredUserResponse
+                - referralCode
+                - refereeAddress
+                - campaignId
+                - message
+        """
+        return await self.apis.post(
+            SERVICE_URLS["GROWTH"]["AFFILIATE_LINK_REFERRED_USER"], params, True
+        )
+
+    async def get_referrer_info(self, parentAddress: str = ""):
+        """
+        Inputs:
+            parentAddress (Optional)
+        Returns:
+            - GetReferrerInfoResponse
+                - isReferee
         """
         return await self.apis.get(
             SERVICE_URLS["GROWTH"]["REFERRER_INFO"],
-            { "parentAddress":parentAddress},
-            True
+            {"parentAddress": parentAddress},
+            True,
         )
-    
+
     async def get_campaign_details(self):
         """
-            Returns:
-                - list of GetCampaignDetailsResponse
+        Returns:
+            - list of GetCampaignDetailsResponse
         """
-        return await self.apis.get(
-            SERVICE_URLS["GROWTH"]["CAMPAIGN_DETAILS"]
-        )
-    
-    async def get_campaign_rewards(self,campaignId:int, parentAddress: str=""):
+        return await self.apis.get(SERVICE_URLS["GROWTH"]["CAMPAIGN_DETAILS"])
+
+    async def get_campaign_rewards(self, campaignId: int, parentAddress: str = ""):
         """
-            Inputs:
-                campaignId: represents campaign id for which user wants to fetch rewards of
-                parentAddress (Optional)
-            Returns:
-                - GetCampaignRewardsResponse
+        Inputs:
+            campaignId: represents campaign id for which user wants to fetch rewards of
+            parentAddress (Optional)
+        Returns:
+            - GetCampaignRewardsResponse
         """
         return await self.apis.get(
             SERVICE_URLS["GROWTH"]["CAMPAIGN_REWARDS"],
-            {"campaignId": campaignId, "parentAddress":parentAddress },
-            True
+            {"campaignId": campaignId, "parentAddress": parentAddress},
+            True,
         )
-    
-    async def get_affiliate_payouts(self,campaignId:int,parentAddress:str=""):
+
+    async def get_affiliate_payouts(self, campaignId: int, parentAddress: str = ""):
         """
-            Inputs:
-                campaignId: represents campaign id for which user wants to fetch payouts of
-                parentAddress (Optional)
-            Returns:
-                - List of GetAffiliatePayoutsResponse
+        Inputs:
+            campaignId: represents campaign id for which user wants to fetch payouts of
+            parentAddress (Optional)
+        Returns:
+            - List of GetAffiliatePayoutsResponse
         """
         return await self.apis.get(
             SERVICE_URLS["GROWTH"]["AFFILIATE_PAYOUTS"],
-            {"campaignId": campaignId,"parentAddress":parentAddress},
-            True
+            {"campaignId": campaignId, "parentAddress": parentAddress},
+            True,
         )
-    
-    async def get_affiliate_referee_details(self,params:GetAffiliateRefereeDetailsRequest):
+
+    async def get_affiliate_referee_details(
+        self, params: GetAffiliateRefereeDetailsRequest
+    ):
         """
-            Inputs:
-                params: GetAffiliateRefereeDetailsRequest
-            Returns:
-                - GetAffiliateRefereeDetailsRequestGetAffiliatePayoutsResponse
+        Inputs:
+            params: GetAffiliateRefereeDetailsRequest
+        Returns:
+            - GetAffiliateRefereeDetailsRequestGetAffiliatePayoutsResponse
         """
         return await self.apis.get(
-            SERVICE_URLS["GROWTH"]["AFFILIATE_REFEREE_DETAILS"],
-            params,
-            True
+            SERVICE_URLS["GROWTH"]["AFFILIATE_REFEREE_DETAILS"], params, True
         )
-    
-    async def get_affiliate_referee_count(self,campaignId:int, parentAddress:str=""):
+
+    async def get_affiliate_referee_count(
+        self, campaignId: int, parentAddress: str = ""
+    ):
         """
-            Inputs:
-                campaignId: represents campaign id for which user wants to fetch referee count of
-                parentAddress (Optional)
-            Returns:
-                - GetAffiliateRefereeCountResponse
+        Inputs:
+            campaignId: represents campaign id for which user wants to fetch referee count of
+            parentAddress (Optional)
+        Returns:
+            - GetAffiliateRefereeCountResponse
         """
         return await self.apis.get(
             SERVICE_URLS["GROWTH"]["AFFILIATE_REFEREES_COUNT"],
-            {"campaignId": campaignId, "parentAddress":parentAddress},
-            True
+            {"campaignId": campaignId, "parentAddress": parentAddress},
+            True,
         )
-    
-    async def get_user_rewards_history(self,params:GetUserRewardsHistoryRequest):
+
+    async def get_user_rewards_history(self, params: GetUserRewardsHistoryRequest):
         """
-            Inputs:
-                params: GetUserRewardsHistoryRequest
-            Returns:
-                - GetUserRewardsHistoryResponse
+        Inputs:
+            params: GetUserRewardsHistoryRequest
+        Returns:
+            - GetUserRewardsHistoryResponse
         """
         return await self.apis.get(
-            SERVICE_URLS["GROWTH"]["USER_REWARDS_HISTORY"],
-            params,
-            True
+            SERVICE_URLS["GROWTH"]["USER_REWARDS_HISTORY"], params, True
         )
-    
-    async def get_user_rewards_summary(self,parentAddress:str=""):
+
+    async def get_user_rewards_summary(self, parentAddress: str = ""):
         """
-            Returns:
-                - List of GetUserRewardsSummaryResponse
+        Returns:
+            - List of GetUserRewardsSummaryResponse
         """
         return await self.apis.get(
             SERVICE_URLS["GROWTH"]["USER_REWARDS_SUMMARY"],
-            { "parentAddress":parentAddress},
-            True
+            {"parentAddress": parentAddress},
+            True,
         )
-    
-    async def get_trade_and_earn_rewards_overview(self,campaignId:int, parentAddress:str=""):
+
+    async def get_trade_and_earn_rewards_overview(
+        self, campaignId: int, parentAddress: str = ""
+    ):
         """
-            Inputs:
-                campaignId: represents campaign id for which user wants to fetch rewards overview of
-                parentAddress (Optional)
-            Returns:
-                - GetTradeAndEarnRewardsOverviewResponse
+        Inputs:
+            campaignId: represents campaign id for which user wants to fetch rewards overview of
+            parentAddress (Optional)
+        Returns:
+            - GetTradeAndEarnRewardsOverviewResponse
         """
         return await self.apis.get(
             SERVICE_URLS["GROWTH"]["REWARDS_OVERVIEW"],
             {"campaignId": campaignId, "parentAddress": parentAddress},
-            True
+            True,
         )
-    
-    async def get_trade_and_earn_rewards_detail(self,params:GetTradeAndEarnRewardsDetailRequest):
+
+    async def get_trade_and_earn_rewards_detail(
+        self, params: GetTradeAndEarnRewardsDetailRequest
+    ):
         """
-            Inputs:
-                params: GetTradeAndEarnRewardsDetailRequest
-            Returns:
-                - GetTradeAndEarnRewardsDetailResponse
+        Inputs:
+            params: GetTradeAndEarnRewardsDetailRequest
+        Returns:
+            - GetTradeAndEarnRewardsDetailResponse
         """
         return await self.apis.get(
-            SERVICE_URLS["GROWTH"]["REWARDS_DETAILS"],
-            params,
-            True
+            SERVICE_URLS["GROWTH"]["REWARDS_DETAILS"], params, True
         )
-    
-    async def get_total_historical_trading_rewards(self, parentAddress:str=""):
+
+    async def get_total_historical_trading_rewards(self, parentAddress: str = ""):
         """
-            Returns:
-                - GetTotalHistoricalTradingRewardsResponse
+        Returns:
+            - GetTotalHistoricalTradingRewardsResponse
         """
         return await self.apis.get(
             SERVICE_URLS["GROWTH"]["TOTAL_HISTORICAL_TRADING_REWARDS"],
-            {"parentAddress":parentAddress},
-            True
+            {"parentAddress": parentAddress},
+            True,
         )
-    
+
     async def get_maker_rewards_summary(self, parentAddress: str):
         """
-            Returns:
-                - GetMakerRewardsSummaryResponse
+        Returns:
+            - GetMakerRewardsSummaryResponse
         """
         return await self.apis.get(
             SERVICE_URLS["GROWTH"]["MAKER_REWARDS_SUMMARY"],
-            {"parentAddress":parentAddress},
-            True
+            {"parentAddress": parentAddress},
+            True,
         )
-    
-    async def get_maker_reward_details(self,params:GetMakerRewardDetailsRequest):
+
+    async def get_maker_reward_details(self, params: GetMakerRewardDetailsRequest):
         """
-            Inputs:
-                params: GetMakerRewardDetailsRequest
-            Returns:
-                - GetMakerRewardDetailsResponse
+        Inputs:
+            params: GetMakerRewardDetailsRequest
+        Returns:
+            - GetMakerRewardDetailsResponse
         """
         return await self.apis.get(
-            SERVICE_URLS["GROWTH"]["MAKER_REWARDS_DETAILS"],
-            params,
-            True
+            SERVICE_URLS["GROWTH"]["MAKER_REWARDS_DETAILS"], params, True
         )
 
     async def get_user_white_list_status_for_market_maker(self):
         """
-            Returns:
-                - GetUserWhiteListStatusForMarkeMaker
+        Returns:
+            - GetUserWhiteListStatusForMarkeMaker
         """
         return await self.apis.get(
-            SERVICE_URLS["GROWTH"]["MAKER_WHITELIST_STATUS"],
-            {},
-            True
+            SERVICE_URLS["GROWTH"]["MAKER_WHITELIST_STATUS"], {}, True
         )
-    
-    #open referral program
-    async def get_open_referral_details(self, campaignId, parentAddress: str=""):
+
+    # open referral program
+    async def get_open_referral_details(self, campaignId, parentAddress: str = ""):
         """
         Get open referral details.
 
@@ -1393,7 +1391,7 @@ class BluefinClient:
         response = self.apis.get(url, params, True)
         return response  # Returns a dictionary containing open referral payouts.
 
-    async def get_open_referral_overview(self,parentAddress:str="" ):
+    async def get_open_referral_overview(self, parentAddress: str = ""):
         """
         Get open referral overview.
 
@@ -1401,8 +1399,10 @@ class BluefinClient:
         dict: Response containing an overview of open referrals.
         """
         url = SERVICE_URLS["GROWTH"]["OPEN_REFERRAL_OVERVIEW"]
-        response = self.apis.get(url, {"parentAddress":parentAddress}, True)
-        return response  # Returns a dictionary containing an overview of open referrals.
+        response = self.apis.get(url, {"parentAddress": parentAddress}, True)
+        return (
+            response  # Returns a dictionary containing an overview of open referrals.
+        )
 
     async def open_referral_link_referred_user(self, referralCode):
         """
@@ -1418,7 +1418,6 @@ class BluefinClient:
         url = SERVICE_URLS["GROWTH"]["OPEN_REFERRAL_LINK_REFERRED_USER"]
         response = self.apis.post(url, data, True)
         return response  # Returns a boolean indicating success or failure.
-
 
     def set_uuid(self, uuid):
         self.apis.set_uuid(uuid)

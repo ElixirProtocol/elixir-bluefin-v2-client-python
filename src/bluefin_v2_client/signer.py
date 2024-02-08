@@ -10,7 +10,7 @@ class Signer:
     def __init__(self):
         pass
 
-    def sign_tx(self, tx_bytes_str: str, sui_wallet: SuiWallet) -> str:
+    async def sign_tx(self, tx_bytes_str: str, sui_wallet: SuiWallet) -> str:
         """
         expects the msg in str
         expects the suiwallet object
@@ -32,7 +32,7 @@ class Signer:
         res = base64.b64encode(temp)
         return res.decode()
 
-    def sign_hash(self, hash, private_key, append=""):
+    async def sign_hash(self, hash, private_key, append=""):
         """
         Signs the hash and returns the signature.
         """

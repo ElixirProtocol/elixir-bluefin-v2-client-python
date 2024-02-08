@@ -70,7 +70,7 @@ class OrderSigner(Signer):
         buffer = self.get_serialized_order(order)
         return hashlib.sha256(buffer).digest()
 
-    def sign_order(self, order: Order, private_key):
+    async def sign_order(self, order: Order, private_key):
         """
         Used to create an order signature. The method will use the provided key
         in params to sign the order.
@@ -85,4 +85,4 @@ class OrderSigner(Signer):
         msg_hash = hashlib.sha256(
             self.get_serialized_order(order).hex().encode("utf-8")
         ).digest()
-        return self.sign_hash(msg_hash, private_key, "")
+        return await self.sign_hash(msg_hash, private_key, "")
