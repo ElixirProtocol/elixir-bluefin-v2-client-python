@@ -5,7 +5,7 @@ from .api_service import APIService
 from .contracts import Contracts
 from .order_signer import OrderSigner
 from .onboarding_signer import OnboardingSigner
-from .constants import TIME, SERVICE_URLS
+from .constants import SUI_CLOCK_OBJECT_ID, TIME, SERVICE_URLS
 from .sockets_lib import Sockets
 from .websocket_client import WebsocketClient
 from .signer import Signer
@@ -516,6 +516,7 @@ class BluefinClient:
         # implies user has an open position on-chain, perform on-chain leverage update
         if user_position != {}:
             callArgs = []
+            callArgs.append(SUI_CLOCK_OBJECT_ID)
             callArgs.append(self.contracts.get_perpetual_id(symbol))
             callArgs.append(self.contracts.get_bank_id())
             callArgs.append(self.contracts.get_sub_account_id())
@@ -602,6 +603,7 @@ class BluefinClient:
             raise (Exception(f"User has no open position on market: {symbol}"))
 
         callArgs = []
+        callArgs.append(SUI_CLOCK_OBJECT_ID)
         callArgs.append(self.contracts.get_perpetual_id(symbol))
         callArgs.append(self.contracts.get_bank_id())
 
@@ -1093,8 +1095,10 @@ class BluefinClient:
         for i in account_data_by_market:
             if symbol.value == i["symbol"]:
                 return from1e18(int(i["selectedLeverage"]))
-        # todo fetch from exchange info route
-        return DEAULT_EXCHANGE_LEVERAGE
+            
+        exchange_info_by_market = await self.get_exchange_info(symbol)
+        
+        return from1e18(int(exchange_info_by_market['defaultLeverage']))
 
     async def get_cancel_on_disconnect_timer(
         self, params: GetCancelOnDisconnectTimerRequest = None
