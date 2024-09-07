@@ -22,11 +22,10 @@ class MARKET_SYMBOLS(Enum):
     APT = "APT-PERP"
     AVAX = "AVAX-PERP"
     TIA = "TIA-PERP"
-    MATIC = "MATIC-PERP"
+    POL = "POL-PERP"
     SEI = "SEI-PERP"
 
 
-    
 class TIME_IN_FORCE(Enum):
     IMMEDIATE_OR_CANCEL = "IOC"
     GOOD_TILL_TIME = "GTT"
