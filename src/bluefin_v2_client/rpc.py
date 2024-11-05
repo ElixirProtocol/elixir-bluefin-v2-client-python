@@ -16,6 +16,7 @@ def rpc_unsafe_moveCall(
     packageId: str,
     gasBudget: int = 100000000,
     typeArguments: list = [],
+    gas_coin_id: str = None
 ):
     """
     Does the RPC call to SUI chain
@@ -46,7 +47,7 @@ def rpc_unsafe_moveCall(
     base_dict["params"].append(typeArguments)
     base_dict["params"].append(params)
 
-    base_dict["params"].append(None)
+    base_dict["params"].append(gas_coin_id)
     base_dict["params"].append(str(gasBudget))
 
     payload = json.dumps(base_dict)
